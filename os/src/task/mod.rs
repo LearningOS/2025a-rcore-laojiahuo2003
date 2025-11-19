@@ -14,7 +14,7 @@ mod switch;
 #[allow(clippy::module_inception)]
 mod task;
 
-use crate::config::MAX_APP_NUM;
+use crate::config::{MAX_APP_NUM, MAX_SYSCALL_NUM};
 use crate::loader::{get_num_app, init_app_cx};
 use crate::sync::UPSafeCell;
 use lazy_static::*;
@@ -54,10 +54,12 @@ lazy_static! {
         let mut tasks = [TaskControlBlock {
             task_cx: TaskContext::zero_init(),
             task_status: TaskStatus::UnInit,
+            sys_call_counts: [0; MAX_SYSCALL_NUM],
         }; MAX_APP_NUM];
         for (i, task) in tasks.iter_mut().enumerate() {
             task.task_cx = TaskContext::goto_restore(init_app_cx(i));
             task.task_status = TaskStatus::Ready;
+            task.sys_call_counts = [0; MAX_SYSCALL_NUM];
         }
         TaskManager {
             num_app,
@@ -72,6 +74,27 @@ lazy_static! {
 }
 
 impl TaskManager {
+    /// 增加当前任务对指定系统调用的调用次数
+    pub fn increase_sys_call(&self, syscall_id: usize) {
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        
+        // 检查系统调用ID是否有效
+        if syscall_id < inner.tasks[current].sys_call_counts.len() {
+            inner.tasks[current].sys_call_counts[syscall_id] += 1;
+        }
+    }
+    /// 获取当前任务对指定系统调用的调用次数
+    pub fn get_syscall_count(&self, syscall_id: usize) -> usize {
+        let inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        
+        if syscall_id < inner.tasks[current].sys_call_counts.len() {
+            inner.tasks[current].sys_call_counts[syscall_id]
+        } else {
+            0
+        }
+    }
     /// Run the first task in task list.
     ///
     /// Generally, the first task in task list is an idle task (we call it zero process later).
@@ -168,4 +191,17 @@ pub fn suspend_current_and_run_next() {
 pub fn exit_current_and_run_next() {
     mark_current_exited();
     run_next_task();
+}
+
+
+
+// 添加模块级别的公共接口
+/// 增加当前任务调用编号为 syscall_id 的系统调用的次数
+pub fn increase_sys_call(syscall_id: usize) {
+    TASK_MANAGER.increase_sys_call(syscall_id);
+}
+
+/// 获取当前任务调用编号为 syscall_id 的系统调用的次数
+pub fn get_syscall_count(syscall_id: usize) -> usize {
+    TASK_MANAGER.get_syscall_count(syscall_id)
 }
