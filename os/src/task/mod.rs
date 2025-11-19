@@ -46,7 +46,7 @@ pub struct TaskManagerInner {
     /// id of current `Running` task
     current_task: usize,
 }
-
+// 初始化
 lazy_static! {
     /// Global variable: TASK_MANAGER
     pub static ref TASK_MANAGER: TaskManager = {
